@@ -16,7 +16,7 @@ public class Recv
 	{
 		//打开连接和创建频道，与发送端一样
 		ConnectionFactory factory = new ConnectionFactory();
-		factory.setHost("127.0.0.1");
+		factory.setHost("192.168.1.100");
 		factory.setPort(5672);
 		factory.setUsername("guest");
 		factory.setPassword("guest");
