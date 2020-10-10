@@ -1,5 +1,6 @@
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -11,12 +12,14 @@ import java.io.OutputStreamWriter;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLConnection;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.lang.StringUtils;
 
 import com.alibaba.fastjson.JSONObject;
@@ -24,6 +27,7 @@ import com.qiniu.common.QiniuException;
 import com.qiniu.http.Response;
 import com.qiniu.storage.UploadManager;
 import com.qiniu.util.Auth;
+import com.qiniu.util.Hex;
 import com.qiniu.util.Md5;
 import com.qiniu.util.StringMap;
 
@@ -39,8 +43,8 @@ public class SelfV2 {
 		if (args.length > 1) {
 			hlsKeyUrl = args[1];
 		}
-		String csv = baseDir + "video5.csv";
-		String saveJson = baseDir + "videoResult.json";
+		String csv = baseDir + "id_vid.csv";
+		String saveJson = baseDir + "bbvideoResult.json";
 		System.out.println("csv:" + csv + " saveJson:" + saveJson);
 		BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(saveJson)));
 		for (VideoInfo vInfo : getVideoList(csv)) {
@@ -93,10 +97,13 @@ public class SelfV2 {
 			FileOutputStream fs = new FileOutputStream(savePath);
 
 			byte[] buffer = new byte[1204];
-			int length;
+			int i = 0;
 			while ((byteread = inStream.read(buffer)) != -1) {
 				bytesum += byteread;
 				fs.write(buffer, 0, byteread);
+				if(i++%100==0) {
+					System.out.println(new Date()+ " "+bytesum+"byte downloaded and still downloading...");
+				}
 			}
 			fs.close();
 		} catch (FileNotFoundException e) {
@@ -121,8 +128,16 @@ public class SelfV2 {
 		}
 		File file = new File(localFilePath);
 		file.delete();
-		videoInfo.ccurl = getCCurl(videoInfo.videoid);
+		JSONObject ccInfo = getCCInfo(videoInfo.videoid);
+		videoInfo.ccurl = ccInfo.getJSONObject("video").getString("url");
+		String infoMd5 = ccInfo.getJSONObject("video").getString("md5").toLowerCase();
 		downLoad(videoInfo.ccurl, localFilePath);
+		String md5Download  = getMD5(new File(localFilePath)).toLowerCase();
+		System.out.println("md5Download:"+md5Download+" infoMd5:"+infoMd5);
+		if(!infoMd5.equals(md5Download)) {
+			throw new Exception("download Error");
+		}
+		
 		System.out.println("download finish! start upload!");
 		// 构造一个带指定 Region 对象的配置类
 		com.qiniu.storage.Configuration cfg = new com.qiniu.storage.Configuration();
@@ -186,14 +201,14 @@ public class SelfV2 {
 		return videoInfo;
 	}
 
-	private static String getCCurl(String videoid) throws Exception {
+	private static JSONObject getCCInfo(String videoid) throws Exception {
 		long time = System.currentTimeMillis() / 1000;
 		String rawArgs = "userid=BDCCCDBC3050AF66&videoid=" + videoid + "&time=" + time;
 		String args = rawArgs + "&salt=RxBuHAC64K1QkFYkSanycitZbR6Ibwvj";
 		String hash = Md5.md5(args.getBytes());
 		String url = "http://spark.bokecc.com/api/video/original?" + rawArgs + "&hash=" + hash;
 		JSONObject ccJson = getJsonFromUrl(url);
-		return ccJson.getJSONObject("video").getString("url");
+		return ccJson;
 	}
 
 	private static List<VideoInfo> getVideoList(String csv) throws Exception {
@@ -213,4 +228,28 @@ public class SelfV2 {
 		}
 		return list;
 	}
+	 public static String getMD5(File file) {
+	        FileInputStream fileInputStream = null;
+	        try {
+	            MessageDigest MD5 = MessageDigest.getInstance("MD5");
+	            fileInputStream = new FileInputStream(file);
+	            byte[] buffer = new byte[8192];
+	            int length;
+	            while ((length = fileInputStream.read(buffer)) != -1) {
+	                MD5.update(buffer, 0, length);
+	            }
+	            return new String(Hex.encodeHex(MD5.digest()));
+	        } catch (Exception e) {
+	            e.printStackTrace();
+	            return null;
+	        } finally {
+	            try {
+	                if (fileInputStream != null){
+	                    fileInputStream.close();
+	                    }
+	            } catch (IOException e) {
+	                e.printStackTrace();
+	            }
+	        }
+	    }
 }
